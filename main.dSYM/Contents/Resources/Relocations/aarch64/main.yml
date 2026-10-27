@@ -1,5 +1,0 @@
----
-triple:          'arm64-apple-darwin'
-binary-path:     '/Users/paulacom/Desktop/CS 3853 Comp Arch/Virtual Memory and Cache Simulator Project/Virtual-Memory-and-Cache-Simulator/main'
-relocations:     []
-...
