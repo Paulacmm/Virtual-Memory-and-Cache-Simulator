@@ -5,6 +5,8 @@
 
 int main(int argc, char *argv[])
 {
+    printf("Cache Simulator - CS 3853 – Team #4\n\n");
+
     int cache_size = 0;
     int block_size = 0;
     int associativity = 0;
@@ -47,6 +49,11 @@ int main(int argc, char *argv[])
             {
                 strcpy(rep_policy, "Random");
             }
+            else
+            {
+                printf("Error. Replacement Policy must be either rr or rnd.\n");
+                return 1;
+            }
         }
         else if (strcmp(argv[i], "-p") == 0)
         {
@@ -85,14 +92,14 @@ int main(int argc, char *argv[])
     }
 
     // Print input paramenters
-    printf("***** Cache Input Parameters *****\n");
-    printf("Cache Size:%24d KB\n", cache_size);
-    printf("Block Size:%23d bytes\n", block_size);
-    printf("Associativity:%19d\n", associativity);
-    printf("Replacement Policy:%24s\n", rep_policy);
-    printf("Physical Memory:%20d MB\n", p_memory);
-    printf("Percent Memory Used by System:%6.1f%%\n", usage);
-    printf("Instructions / Time Slice:%9d\n", inst_per_time);
+    printf("***** Cache Input Parameters *****\n\n");
+    printf("%-33s%d KB\n", "Cache Size:", cache_size);
+    printf("%-33s%d bytes\n", "Block Size:", block_size);
+    printf("%-33s%d\n", "Associativity:", associativity);
+    printf("%-33s%s\n", "Replacement Policy:", rep_policy);
+    printf("%-33s%d MB\n", "Physical Memory:", p_memory);
+    printf("%-33s%.1f%%\n", "Percent Memory Used by System:", usage);
+    printf("%-33s%d\n", "Instructions / Time Slice:", inst_per_time);
 
     return 0;
 }
