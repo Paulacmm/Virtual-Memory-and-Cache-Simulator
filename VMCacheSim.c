@@ -8,7 +8,7 @@ int main(int argc, char *argv[])
     int cache_size = 0;
     int block_size = 0;
     int associativity = 0;
-    char rep_policy[12];
+    char rep_policy[15];
     int p_memory = 0;
     double usage = 0.0;
     int inst_per_time = 0;
@@ -16,8 +16,15 @@ int main(int argc, char *argv[])
     int count = 0;
 
     // Parse the arguments
+
     for (int i = 1; i < argc; i += 2)
     {
+        if (i + 1 >= argc)
+        {
+            printf("Error. Flag %s missing value.\n", argv[i]);
+            return 1;
+        }
+
         if (strcmp(argv[i], "-s") == 0)
         {
             cache_size = atoi(argv[i + 1]);
@@ -57,7 +64,7 @@ int main(int argc, char *argv[])
         {
             if (count >= 3)
             {
-                printf("Error. Maximun of 3 trace files allowed.");
+                printf("Error. Maximun of 3 trace files allowed.\n");
                 return 1;
             }
             files[count] = argv[i + 1];
@@ -65,7 +72,8 @@ int main(int argc, char *argv[])
         }
         else
         {
-            printf("Error. Invalid argument.");
+            printf("Error. Invalid argument.\n");
+            return 1;
         }
     }
 
@@ -75,6 +83,16 @@ int main(int argc, char *argv[])
     {
         printf("\t%s\n", files[i]);
     }
+
+    // Print input paramenters
+    printf("***** Cache Input Parameters *****\n");
+    printf("Cache Size:%24d KB\n", cache_size);
+    printf("Block Size:%23d bytes\n", block_size);
+    printf("Associativity:%19d\n", associativity);
+    printf("Replacement Policy:%24s\n", rep_policy);
+    printf("Physical Memory:%20d MB\n", p_memory);
+    printf("Percent Memory Used by System:%6.1f%%\n", usage);
+    printf("Instructions / Time Slice:%9d\n", inst_per_time);
 
     return 0;
 }
