@@ -7,11 +7,12 @@ int main(int argc, char *argv[])
 {
     printf("Cache Simulator - CS 3853 – Team #4\n\n");
 
-    int cache_size = 0;
+    int virtual_address_space_bits = 32;
+    int cache_size_KB = 0;
     int block_size = 0;
     int associativity = 0;
     char rep_policy[15];
-    int p_memory = 0;
+    int p_memory_MB = 0;
     double usage = 0.0;
     int inst_per_time = 0;
     char *files[3];
@@ -29,7 +30,7 @@ int main(int argc, char *argv[])
 
         if (strcmp(argv[i], "-s") == 0)
         {
-            cache_size = atoi(argv[i + 1]);
+            cache_size_KB = atoi(argv[i + 1]);
         }
         else if (strcmp(argv[i], "-b") == 0)
         {
@@ -57,7 +58,7 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(argv[i], "-p") == 0)
         {
-            p_memory = atoi(argv[i + 1]);
+            p_memory_MB = atoi(argv[i + 1]);
         }
         else if (strcmp(argv[i], "-u") == 0)
         {
@@ -93,13 +94,48 @@ int main(int argc, char *argv[])
 
     // Print input paramenters
     printf("***** Cache Input Parameters *****\n\n");
-    printf("%-33s%d KB\n", "Cache Size:", cache_size);
+    printf("%-33s%d KB\n", "Cache Size:", cache_size_KB);
     printf("%-33s%d bytes\n", "Block Size:", block_size);
     printf("%-33s%d\n", "Associativity:", associativity);
     printf("%-33s%s\n", "Replacement Policy:", rep_policy);
-    printf("%-33s%d MB\n", "Physical Memory:", p_memory);
+    printf("%-33s%d MB\n", "Physical Memory:", p_memory_MB);
     printf("%-33s%.1f%%\n", "Percent Memory Used by System:", usage);
     printf("%-33s%d\n", "Instructions / Time Slice:", inst_per_time);
+
+    // Calculate cache values
+    int num_blocks = (cache_size_KB * pow(2, 10)) / block_size;
+
+    int num_rows = num_blocks / associativity;
+
+    int index = log2(num_rows);
+
+    int offset = log2(block_size);
+
+    int total_address_bits = log2(p_memory_MB) + 20;
+
+    int tag = total_address_bits - index - offset;
+
+    int valid = 1;
+
+    int overhead = num_blocks * (tag + valid) / 8;
+
+    int implementation_size = overhead + (cache_size_KB * pow(2, 10));
+
+    double implementation_size_KB = implementation_size / pow(2, 10);
+
+    double cost_per_KB = 0.07;
+
+    double total_cost = implementation_size_KB * cost_per_KB;
+
+    // Print cache calculated values
+    printf("\n***** Cache Calculated Values  *****\n\n");
+    printf("%-33s%d\n", "Total # Blocks:", num_blocks);
+    printf("%-33s%d bits\n", "Tag Size:", tag);
+    printf("%-33s%d bits\n", "Index Size:", index);
+    printf("%-33s%d\n", "Total # Rows:", num_rows);
+    printf("%-33s%d bytes\n", "Overhead Size:", overhead);
+    printf("%-33s%.2f KB (%d bytes)\n", "Implementation Memory Size:", implementation_size_KB, implementation_size);
+    printf("%-33s$%.2f @ $%.2f per KB\n", "Cost:", total_cost, cost_per_KB);
 
     return 0;
 }
