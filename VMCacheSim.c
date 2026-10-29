@@ -137,5 +137,25 @@ int main(int argc, char *argv[])
     printf("%-33s%.2f KB (%d bytes)\n", "Implementation Memory Size:", implementation_size_KB, implementation_size);
     printf("%-33s$%.2f @ $%.2f per KB\n", "Cost:", total_cost, cost_per_KB);
 
+
+    //Calculate physical values
+    int page_size = pow(2,12);
+
+    int num_physical_pages = (p_memory_MB * pow(2,20)) / page_size;
+
+    int num_system_pages = num_physical_pages * (usage/100);
+
+    int page_table_entry_size = log2(num_physical_pages) + 1;
+
+    int pages_table_entries = pow(2,19);
+
+    int total_page_table_ram = (pages_table_entries * count * page_table_entry_size) / 8;
+
+    printf("\n***** Psyhical Memory Calculated Values  *****\n\n");
+    printf("%-33s%d\n","Number of Physical Pages: ", num_physical_pages);
+    printf("%-33s%d\n","Number of Pages for System: ", num_system_pages);
+    printf("%-33s%d bits\n", "Size of Page Table Entry: ", page_table_entry_size);
+    printf("%-33s%d bytes\n", "Total RAM for Page Table: ", total_page_table_ram);
+
     return 0;
 }
