@@ -1,8 +1,8 @@
-Cache Simulator - CS 3853 – Team #4
+Cache Simulator - CS 3853 – Team #04
 
 Trace File(s):
 	A-9_new_trunk.trc
-	
+
 ***** Cache Input Parameters *****
 
 Cache Size:                      256 KB

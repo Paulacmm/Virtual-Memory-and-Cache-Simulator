@@ -5,7 +5,7 @@
 
 int main(int argc, char *argv[])
 {
-    printf("Cache Simulator - CS 3853 – Team #4\n\n");
+    printf("Cache Simulator - CS 3853 – Team #04\n\n");
 
     int virtual_address_space_bits = 32;
     int cache_size_KB = 0;
