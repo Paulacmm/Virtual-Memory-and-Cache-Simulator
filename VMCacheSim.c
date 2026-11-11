@@ -3,6 +3,81 @@
 #include <string.h>
 #include <math.h>
 
+void run_simulation(char *files[], int count, int inst_per_time)
+{
+    FILE *fp[3];
+    int file_completed[3] = {0, 0, 0};
+    int active_processes = count;
+
+    // Open all files
+    for (int i = 0; i < count; i++)
+    {
+        fp[i] = fopen(files[i], "r");
+
+        if (fp[i] == NULL)
+        {
+            printf("Error. Could not open the file %s\n", files[i]);
+            exit(1);
+        }
+    }
+
+    char line1[256];
+    char line2[256];
+    int current_process = 0;
+
+    while (active_processes > 0)
+    {
+        if (file_completed[current_process] == 0)
+        {
+            int inst_count = 0;
+
+            while (inst_per_time == -1 || inst_count < inst_per_time)
+            {
+                // Check if we have already read all the lines of a file
+                if (fgets(line1, sizeof(line1), fp[current_process]) == NULL || fgets(line2, sizeof(line2), fp[current_process]) == NULL)
+                {
+                    file_completed[current_process] = 1;
+                    fclose(fp[current_process]);
+                    active_processes--;
+                    // TODO: Free the proccess
+                    free_process(current_process);
+                    break;
+                }
+
+                int inst_length;
+                unsigned int start_address;
+                unsigned int destM;
+                char destval[16];
+                unsigned int srcM;
+                char srcval[16];
+
+                if (sscanf(line1, "EIP (%d): %x", &inst_length, &start_address) == 2)
+                {
+                    // TODO: access the address on the page table
+                    process_memory_access(current_process, start_address, inst_length);
+                }
+                if (sscanf(line2, "dstM: %x %s srcM: %x %s", &destM, destval, &srcM, srcval) == 4)
+                {
+                    if (destM != 0 && strcmp(destval, "--------") != 0)
+                    {
+                        // TODO: access the address on the page table
+                        process_memory_access(current_process, destM, 4);
+                    }
+                    if (srcM != 0 && strcmp(srcval, "--------") != 0)
+                    {
+                        // TODO: access the address on the page table
+                        process_memory_access(current_process, srcM, 4);
+                    }
+                }
+
+                inst_count++;
+            }
+        }
+        // Each process take a turn
+        current_process = (current_process + 1) % count;
+    }
+}
+
 int main(int argc, char *argv[])
 {
     printf("Cache Simulator - CS 3853 – Team #04\n\n");
@@ -157,6 +232,9 @@ int main(int argc, char *argv[])
     printf("%-33s%d\n", "Number of Pages for System: ", num_system_pages);
     printf("%-33s%d bits\n", "Size of Page Table Entry: ", page_table_entry_size);
     printf("%-33s%d bytes\n", "Total RAM for Page Table: ", total_page_table_ram);
+
+    // Virtual memory simulation
+    run_simulation(files, count, inst_per_time);
 
     return 0;
 }
