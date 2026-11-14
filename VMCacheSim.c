@@ -3,6 +3,87 @@
 #include <string.h>
 #include <math.h>
 
+#define PAGE_SIZE 4096
+#define PAGE_TABLE_ENTRIES (1 << 19)
+
+typedef struct
+{
+    int valid;
+    int physical_page;
+} PageTableEntry;
+
+PageTableEntry *page_tables[3] = {NULL, NULL, NULL};
+int total_physical_pages = 0;
+int next_free_page = 0;
+unsigned long long page_table_hits = 0;
+unsigned long long pages_from_free = 0;
+
+int setup_page_tables(int count, int num_physical_pages, int num_system_pages){
+    total_physical_pages = num_physical_pages;
+    next_free_page = num_system_pages;
+
+    // Each trace file represents a process with its own page table
+    for (int i = 0; i < count; i++)
+    {
+        page_tables[i] = calloc(PAGE_TABLE_ENTRIES, sizeof(PageTableEntry));
+
+        if (page_tables[i] == NULL)
+        {
+            printf("Error. Could not allocate the page table for process %d\n", i);
+            return -1;
+        }
+    }
+
+    return 0;
+}
+
+void free_process(int a){
+    // TODO: Free physical pages and invalidate cache entries
+    (void)a;
+}
+
+int process_memory_access(int a, unsigned int v, int c)
+{
+    if (c <= 0)
+    {
+        return 0;
+    }
+
+    unsigned int first_page = v / PAGE_SIZE;
+    unsigned int last_page = (v + c - 1) / PAGE_SIZE;
+
+    // An access may span two virtual pages
+    for (unsigned int i = first_page; i <= last_page; i++)
+    {
+        if (i >= PAGE_TABLE_ENTRIES)
+        {
+            printf("Error. Virtual address is outside the supported page table.\n");
+            exit(1);
+        }
+
+        if (page_tables[a][i].valid == 1)
+        {
+            // Page table hit: this process already has the virtual page mapped
+            page_table_hits++;
+        }
+        else if (next_free_page < total_physical_pages)
+        {
+            // Map an unused physical page to the virtual page
+            page_tables[a][i].physical_page = next_free_page;
+            page_tables[a][i].valid = 1;
+            next_free_page++;
+            pages_from_free++;
+        }
+        else
+        {
+            // TODO: Page faults and page replacement are not implemented yet
+            printf("Error. No free physical pages; page replacement is not implemented.\n");
+            exit(1);
+        }
+    }
+
+    return 0;
+}
 void run_simulation(char *files[], int count, int inst_per_time)
 {
     FILE *fp[3];
@@ -233,8 +314,27 @@ int main(int argc, char *argv[])
     printf("%-33s%d bits\n", "Size of Page Table Entry: ", page_table_entry_size);
     printf("%-33s%d bytes\n", "Total RAM for Page Table: ", total_page_table_ram);
 
+    // Setup the page tables before reading the trace files
+    if (setup_page_tables(count, num_physical_pages, num_system_pages) != 0){
+        for (int i = 0; i < count; i++){
+            free(page_tables[i]);
+        }
+        return 1;
+    }
     // Virtual memory simulation
     run_simulation(files, count, inst_per_time);
 
+    // Print the virtual memory results implemented so far
+    printf("\n***** VIRTUAL MEMORY SIMULATION RESULTS *****\n\n");
+    printf("%-33s%d\n", "Physical Pages Used By SYSTEM:", num_system_pages);
+    printf("%-33s%d\n", "Pages Available to User:", num_physical_pages - num_system_pages);
+    printf("\n%-33s%llu\n", "Virtual Pages Mapped:", page_table_hits + pages_from_free);
+    printf("        ------------------------------\n");
+    printf("%-33s%llu\n", "        Page Table Hits:", page_table_hits);
+    printf("%-33s%llu\n", "        Pages from Free:", pages_from_free);
+
+    for (int i = 0; i < count; i++){
+        free(page_tables[i]);
+    }
     return 0;
 }
