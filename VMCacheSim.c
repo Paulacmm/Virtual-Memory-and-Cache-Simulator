@@ -18,6 +18,9 @@ int total_physical_pages = 0;
 unsigned long long page_table_hits = 0;
 unsigned long long pages_from_free = 0;
 
+// Ana: track page-table entries used throughout each trace.
+unsigned char *ever_mapped[3] = {NULL, NULL, NULL};
+unsigned long long used_entries[3] = {0, 0, 0};
 
 // calculate page faults and cache cleaning
 
@@ -189,8 +192,9 @@ int setup_page_tables(int count, int num_physical_pages, int num_system_pages){
     for (int i = 0; i < count; i++)
     {
         page_tables[i] = calloc(PAGE_TABLE_ENTRIES, sizeof(PageTableEntry));
-
-        if (page_tables[i] == NULL)
+        ever_mapped[i] = calloc(PAGE_TABLE_ENTRIES, sizeof(unsigned char));
+        
+        if (page_tables[i] == NULL || ever_mapped[i] == NULL )
         {
             printf("Error. Could not allocate the page table for process %d\n", i);
             return -1;
@@ -255,6 +259,12 @@ int process_memory_access(int a, unsigned int v, int c)
                     fprintf(stderr, "Error. Page replacement failed.\n");
                     exit(1);
                 }
+            }
+
+            //Count each unique virtual page only once, even if evicted/reloaded
+            if (!ever_mapped[a][i]) {
+                ever_mapped[a][i] = 1;
+                used_entries[a]++;
             }
 
             page_tables[a][i].physical_page = physical_page;
@@ -528,10 +538,35 @@ int main(int argc, char *argv[])
     printf("%-33s%llu\n", "        Pages from Free:", pages_from_free);
     printf("%-33s%llu\n", "        Total Page Faults:", total_page_faults);     
 
+    //Milestone #2: report historical page-table usage per process
+    //Match assignment example: each process has 512K entries;
+    //wasted bytes = total allocated bytes - ceil(used entries * bits / 8).
+    printf("\nPage Table Usage Per Process:\n");
+    printf("-----------------------------\n");
+
+    unsigned long long table_bytes = 
+        ((unsigned long long)PAGE_TABLE_ENTRIES * page_table_entry_size) / 8;
+
+    for (int i = 0; i < count; i++) {
+        unsigned long long used_bytes =
+            (used_entries[i] * (unsigned long long)page_table_entry_size + 7) / 8;
+
+        unsigned long long wasted_bytes = table_bytes - used_bytes;
+
+        printf("[%d] %s:\n", i, files[i]);
+
+        printf("        Used Page Table Entries: %llu (%.2f%%)\n",
+            used_entries[i],
+            100.0 * used_entries[i] / PAGE_TABLE_ENTRIES);
+
+        printf("        Page Table Wasted: %llu bytes\n\n", wasted_bytes);
+    }
+    
     cleanup_physical_pages();
 
     for (int i = 0; i < count; i++){
         free(page_tables[i]);
+        free(ever_mapped[i]);
     }
     return 0;
 }
