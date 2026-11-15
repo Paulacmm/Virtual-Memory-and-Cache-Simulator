@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <stdint.h>
 #include <math.h>
 
 #define PAGE_SIZE 4096
@@ -14,13 +15,175 @@ typedef struct
 
 PageTableEntry *page_tables[3] = {NULL, NULL, NULL};
 int total_physical_pages = 0;
-int next_free_page = 0;
 unsigned long long page_table_hits = 0;
 unsigned long long pages_from_free = 0;
 
+
+// calculate page faults and cache cleaning
+
+typedef struct {
+    int occupied;
+    int process_id;
+    unsigned int virtual_page;
+} PhysicalPageOwner;
+
+PhysicalPageOwner *physical_page_owners = NULL;
+
+int *free_page_stack = NULL;
+int free_page_count = 0;
+int system_page_count = 0;
+int next_victim_page = 0;
+
+unsigned long long total_page_faults = 0;
+unsigned long long cache_invalidation_requests = 0;
+
+// cache module can register this function later
+void (*cache_invalidator)(int physical_page) = NULL;
+
+void set_cache_invalidator(void (*callback)(int))
+{
+    cache_invalidator = callback;
+}
+
+void invalidate_page_cache(int physical_page)
+{
+    if (cache_invalidator != NULL) {
+        cache_invalidator(physical_page);
+        cache_invalidation_requests++;
+    }
+}
+
+int initialize_physical_pages(int total_pages, int system_pages)
+{
+    if (total_pages <= 0 ||
+        system_pages < 0 ||
+        system_pages >= total_pages) {
+        return 0;
+    }
+
+    physical_page_owners =
+        calloc((size_t)total_pages, sizeof(PhysicalPageOwner));
+
+    free_page_stack =
+        malloc((size_t)total_pages * sizeof(int));
+
+    if (physical_page_owners == NULL || free_page_stack == NULL) {
+        free(physical_page_owners);
+        free(free_page_stack);
+        physical_page_owners = NULL;
+        free_page_stack = NULL;
+        return 0;
+    }
+
+    system_page_count = system_pages;
+    next_victim_page = system_pages;
+    free_page_count = 0;
+
+    // add all user-available physical pages to the free pool
+    for (int p = total_pages - 1; p >= system_pages; p--) {
+        free_page_stack[free_page_count++] = p;
+    }
+
+    return 1;
+}
+
+int allocate_physical_page(int process_id, unsigned int virtual_page)
+{
+    if (physical_page_owners == NULL ||
+        process_id < 0 || process_id >= 3 ||
+        free_page_count == 0) {
+        return -1;
+    }
+
+    int page = free_page_stack[--free_page_count];
+
+    physical_page_owners[page].occupied = 1;
+    physical_page_owners[page].process_id = process_id;
+    physical_page_owners[page].virtual_page = virtual_page;
+
+    return page;
+}
+
+int handle_page_fault(int process_id, unsigned int virtual_page)
+{
+    if (physical_page_owners == NULL ||
+        process_id < 0 || process_id >= 3 ||
+        free_page_count != 0) {
+        return -1;
+    }
+
+    int user_pages = total_physical_pages - system_page_count;
+
+    for (int attempt = 0; attempt < user_pages; attempt++) {
+        int victim = next_victim_page++;
+
+        if (next_victim_page >= total_physical_pages) {
+            next_victim_page = system_page_count;
+        }
+
+        if (!physical_page_owners[victim].occupied) {
+            continue;
+        }
+
+        int old_process =
+            physical_page_owners[victim].process_id;
+
+        unsigned int old_virtual_page =
+            physical_page_owners[victim].virtual_page;
+
+        page_tables[old_process][old_virtual_page].valid = 0;
+
+        invalidate_page_cache(victim);
+
+        physical_page_owners[victim].process_id = process_id;
+        physical_page_owners[victim].virtual_page = virtual_page;
+
+        total_page_faults++;
+
+        return victim;
+    }
+
+    return -1;
+}
+
+void release_process_pages(int process_id)
+{
+    if (physical_page_owners == NULL ||
+        process_id < 0 || process_id >= 3) {
+        return;
+    }
+
+    for (int p = system_page_count; p < total_physical_pages; p++) {
+        if (!physical_page_owners[p].occupied ||
+            physical_page_owners[p].process_id != process_id) {
+            continue;
+        }
+
+        unsigned int vpn = physical_page_owners[p].virtual_page;
+
+        page_tables[process_id][vpn].valid = 0;
+
+        invalidate_page_cache(p);
+
+        physical_page_owners[p].occupied = 0;
+        free_page_stack[free_page_count++] = p;
+    }
+}
+
+void cleanup_physical_pages(void)
+{
+    free(physical_page_owners);
+    free(free_page_stack);
+
+    physical_page_owners = NULL;
+    free_page_stack = NULL;
+    free_page_count = 0;
+}
+
+
 int setup_page_tables(int count, int num_physical_pages, int num_system_pages){
+    (void)num_system_pages;
     total_physical_pages = num_physical_pages;
-    next_free_page = num_system_pages;
 
     // Each trace file represents a process with its own page table
     for (int i = 0; i < count; i++)
@@ -37,9 +200,9 @@ int setup_page_tables(int count, int num_physical_pages, int num_system_pages){
     return 0;
 }
 
-void free_process(int a){
-    // TODO: Free physical pages and invalidate cache entries
-    (void)a;
+void free_process(int a)
+{
+    release_process_pages(a);
 }
 
 int process_memory_access(int a, unsigned int v, int c)
@@ -50,36 +213,54 @@ int process_memory_access(int a, unsigned int v, int c)
     }
 
     unsigned int first_page = v / PAGE_SIZE;
-    unsigned int last_page = (v + c - 1) / PAGE_SIZE;
+    uint64_t end_address = (uint64_t)v + (uint64_t)c - 1;
 
-    // An access may span two virtual pages
-    for (unsigned int i = first_page; i <= last_page; i++)
-    {
+    if (end_address > UINT32_MAX) {
+     fprintf(stderr, "Error. Access exceeds 32-bit address space.\n");
+        exit(1);
+    }
+
+    uint64_t last_page = end_address / PAGE_SIZE;
+
+    // access may span two virtual pages
+    for (uint64_t i = first_page; i <= last_page; i++)    {
         if (i >= PAGE_TABLE_ENTRIES)
         {
             printf("Error. Virtual address is outside the supported page table.\n");
             exit(1);
         }
 
+        
         if (page_tables[a][i].valid == 1)
         {
-            // Page table hit: this process already has the virtual page mapped
+            // existing virtual page mapping
             page_table_hits++;
-        }
-        else if (next_free_page < total_physical_pages)
-        {
-            // Map an unused physical page to the virtual page
-            page_tables[a][i].physical_page = next_free_page;
-            page_tables[a][i].valid = 1;
-            next_free_page++;
-            pages_from_free++;
-        }
+        }   
         else
         {
-            // TODO: Page faults and page replacement are not implemented yet
-            printf("Error. No free physical pages; page replacement is not implemented.\n");
-            exit(1);
+         //  try an available physical page first
+            int physical_page = allocate_physical_page(a, i);
+
+            if (physical_page >= 0)
+            {
+                pages_from_free++;
+            }
+        else
+         {
+                // if no free pages: replace an occupied page
+                physical_page = handle_page_fault(a, i);
+
+                if (physical_page < 0)
+                {
+                    fprintf(stderr, "Error. Page replacement failed.\n");
+                    exit(1);
+                }
+            }
+
+            page_tables[a][i].physical_page = physical_page;
+            page_tables[a][i].valid = 1;
         }
+
     }
 
     return 0;
@@ -163,7 +344,6 @@ int main(int argc, char *argv[])
 {
     printf("Cache Simulator - CS 3853 – Team #04\n\n");
 
-    int virtual_address_space_bits = 32;
     int cache_size_KB = 0;
     int block_size = 0;
     int associativity = 0;
@@ -321,6 +501,18 @@ int main(int argc, char *argv[])
         }
         return 1;
     }
+
+    if (!initialize_physical_pages(num_physical_pages, num_system_pages))
+    {
+        fprintf(stderr, "Error. Could not initialize physical pages.\n");
+
+        for (int i = 0; i < count; i++) {
+            free(page_tables[i]);
+        }
+
+        return 1;
+    }
+
     // Virtual memory simulation
     run_simulation(files, count, inst_per_time);
 
@@ -328,10 +520,15 @@ int main(int argc, char *argv[])
     printf("\n***** VIRTUAL MEMORY SIMULATION RESULTS *****\n\n");
     printf("%-33s%d\n", "Physical Pages Used By SYSTEM:", num_system_pages);
     printf("%-33s%d\n", "Pages Available to User:", num_physical_pages - num_system_pages);
-    printf("\n%-33s%llu\n", "Virtual Pages Mapped:", page_table_hits + pages_from_free);
+    printf("\n%-33s%llu\n", "Virtual Pages Mapped:",
+        page_table_hits + pages_from_free + total_page_faults);
+
     printf("        ------------------------------\n");
     printf("%-33s%llu\n", "        Page Table Hits:", page_table_hits);
     printf("%-33s%llu\n", "        Pages from Free:", pages_from_free);
+    printf("%-33s%llu\n", "        Total Page Faults:", total_page_faults);     
+
+    cleanup_physical_pages();
 
     for (int i = 0; i < count; i++){
         free(page_tables[i]);
